@@ -32,7 +32,7 @@ Save the ZIP somewhere private. It contains your full chat history.
 | File | What it holds |
 |---|---|
 | `conversations.json` | every conversation, as one big JSON list |
-| `chat.html` | a single page with all chats. It's readable, but for large histories it becomes very slow and has no search |
+| `chat.html` | all chats on one long page. It's readable, but it has no search box or filters, and large histories can be slow to open |
 | `file-…` files (images) | pictures you uploaded or generated, referenced from the conversations |
 | `user.json`, `message_feedback.json`, … | account details and feedback |
 
