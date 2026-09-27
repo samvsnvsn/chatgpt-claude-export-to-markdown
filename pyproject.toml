@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chatgpt-claude-export-to-markdown"
+version = "1.0.0"
+description = "Convert ChatGPT and Claude data exports (ZIP) into Markdown files, offline."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["chatgpt", "claude", "export", "markdown", "conversations.json", "obsidian", "backup"]
+classifiers = ["License :: OSI Approved :: MIT License", "Programming Language :: Python :: 3", "Operating System :: OS Independent"]
+
+[project.scripts]
+chat-export = "chat_export.cli:main"
+
+[tool.setuptools]
+packages = ["chat_export"]
