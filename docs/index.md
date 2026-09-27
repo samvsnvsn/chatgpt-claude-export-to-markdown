@@ -23,7 +23,7 @@ Everything here works on your own computer. You never need to upload your export
 
 **Claude:** open **Settings → Privacy → Export data**. Anthropic emails you a download link.
 
-Save the ZIP somewhere private. It contains your full chat history.
+Save the ZIP somewhere private. It contains your full chat history. Large ChatGPT exports can arrive as several files named `…-part-0001.zip`, `…-part-0002.zip`: the first holds the conversations and the others hold more images. Keep them together in one folder.
 
 ## 2. What's inside the export
 
@@ -31,9 +31,9 @@ Save the ZIP somewhere private. It contains your full chat history.
 
 | File | What it holds |
 |---|---|
-| `conversations.json` | every conversation, as one big JSON list |
+| `conversations.json`, or in newer exports `conversations-000.json`, `conversations-001.json`, … | every conversation, as JSON lists |
 | `chat.html` | all chats on one long page. It's readable, but it has no search box or filters, and large histories can be slow to open |
-| `file-…` files (images) | pictures you uploaded or generated, referenced from the conversations |
+| `file-…` / `file_….dat` files | pictures you uploaded or generated, referenced from the conversations |
 | `user.json`, `message_feedback.json`, … | account details and feedback |
 
 Each ChatGPT conversation is stored as a **tree**, not a list. When you edit a message or regenerate an answer, ChatGPT keeps both versions as branches. `current_node` marks the last message of the branch you were looking at. Walk back from it through each `parent` to recover the conversation as you saw it. A naive converter that prints every node shows edited and regenerated messages twice.

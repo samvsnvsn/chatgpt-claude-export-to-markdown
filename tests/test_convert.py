@@ -6,7 +6,7 @@ from pathlib import Path
 from chat_export.cli import main
 from chat_export.loaders import load_export
 from chat_export.markdown import safe_filename
-from tests.fixtures import chatgpt_zip, claude_zip
+from tests.fixtures import chatgpt_split_zips, chatgpt_zip, claude_zip
 
 
 class ChatGPTExportTests(unittest.TestCase):
@@ -100,6 +100,45 @@ class FilenameTests(unittest.TestCase):
     def test_missing_export_gives_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(main([str(Path(tmp) / "nope.zip")]), 2)
+
+
+class SplitChatGPTExportTests(unittest.TestCase):
+    """Current (2026) ChatGPT exports: conversations-NNN.json, .dat images, several -part-NNNN.zip files."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        part1, part2 = chatgpt_split_zips()
+        (self.root / "Conversations_abc-chatgpt-0001-part-0001.zip").write_bytes(part1)
+        (self.root / "Conversations_abc-chatgpt-0001-part-0002.zip").write_bytes(part2)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_reads_all_conversation_chunks_and_images_from_other_parts(self):
+        for chosen in ("part-0001", "part-0002"):  # either part may be chosen
+            conversations, source = load_export(self.root / f"Conversations_abc-chatgpt-0001-{chosen}.zip")
+            try:
+                self.assertEqual(sorted(c.title for c in conversations), ["First chunk", "Second chunk with image"])
+                image = next(c for c in conversations if c.id == "n2").messages[0].attachments[0]
+                self.assertEqual(image.archive_path, "file_00000000aa11bb22.dat")
+            finally:
+                source.close()
+
+    def test_dat_images_get_their_real_extension_in_markdown(self):
+        out = self.root / "out"
+        self.assertEqual(main([str(self.root / "Conversations_abc-chatgpt-0001-part-0001.zip"), "-o", str(out)]), 0)
+        self.assertTrue((out / "assets" / "file_00000000aa11bb22.png").exists())
+        note = next(out.glob("*Second chunk with image.md")).read_text(encoding="utf-8")
+        self.assertIn("assets/file_00000000aa11bb22.png", note)
+
+    def test_single_part_zip_with_chunks(self):
+        part1, _ = chatgpt_split_zips()
+        single = self.root / "export.zip"
+        single.write_bytes(part1)
+        conversations, source = load_export(single)
+        source.close()
+        self.assertEqual(len(conversations), 2)
 
 
 if __name__ == "__main__":

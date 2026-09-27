@@ -23,7 +23,8 @@ Full walkthrough: **[How to turn your ChatGPT or Claude data export into a searc
 
 ## What it does
 
-- Reads the **ChatGPT data export** (`conversations.json` inside the ZIP) and the **Claude data export** (`conversations.json` + `projects.json`), and detects which one it is.
+- Reads the **ChatGPT data export** and the **Claude data export** (`conversations.json` + `projects.json`), and detects which one it is.
+- Supports the **current ChatGPT export format**: conversations split into `conversations-000.json`, `conversations-001.json`, … and large exports delivered as several `…-part-0001.zip`, `…-part-0002.zip` files (keep them in one folder and pass any part). Images stored as `.dat` files get their real extension back.
 - **Follows the branch you actually saw.** ChatGPT stores edits and regenerations as a tree; you get the final conversation, without duplicates.
 - Keeps code blocks (with language), code/tool output, quotes, Claude "thinking" blocks and Claude attachments' extracted text.
 - Copies uploaded and generated **images** into `assets/` and links them.

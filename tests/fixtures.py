@@ -56,3 +56,23 @@ def claude_zip() -> bytes:
         archive.writestr("data-2026/conversations.json", json.dumps(claude_conversations()))
         archive.writestr("data-2026/projects.json", json.dumps([{"uuid": "p-1", "name": "Website rebuild"}]))
     return buffer.getvalue()
+
+
+def chatgpt_split_zips() -> tuple[bytes, bytes]:
+    """2026 ChatGPT export: conversations-NNN.json chunks, .dat assets, split into -part-0001/-part-0002 ZIPs."""
+    def conversation(cid, title, t, parts):
+        return {"id": cid, "title": title, "create_time": t, "update_time": t, "current_node": "a", "mapping": {
+            "u": {"id": "u", "parent": None, "children": ["a"], "message": {"author": {"role": "user"}, "create_time": t, "content": {"content_type": "multimodal_text", "parts": parts}}},
+            "a": {"id": "a", "parent": "u", "children": [], "message": {"author": {"role": "assistant"}, "create_time": t + 1, "content": {"content_type": "text", "parts": ["ok"]}}}}}
+
+    image = {"content_type": "image_asset_pointer", "asset_pointer": "sediment://file_00000000aa11bb22", "width": 1, "height": 1}
+    part1 = io.BytesIO()
+    with zipfile.ZipFile(part1, "w") as archive:
+        archive.writestr("chat.html", "<html></html>")
+        archive.writestr("conversations-000.json", json.dumps([conversation("n1", "First chunk", 1780000000.0, ["hello"])]))
+        archive.writestr("conversations-001.json", json.dumps([conversation("n2", "Second chunk with image", 1780000100.0, [image, "look"])]))
+        archive.writestr("conversation_asset_file_names.json", "{}")
+    part2 = io.BytesIO()
+    with zipfile.ZipFile(part2, "w") as archive:
+        archive.writestr("file_00000000aa11bb22.dat", PNG)
+    return part1.getvalue(), part2.getvalue()

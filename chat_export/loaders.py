@@ -8,6 +8,7 @@ content is kept as a clearly marked note instead of being silently dropped.
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any, Optional
@@ -15,15 +16,37 @@ from typing import Any, Optional
 from .model import Attachment, Conversation, Message, from_epoch, from_iso
 
 
+# Since mid-2026 ChatGPT exports split conversations into conversations-000.json,
+# conversations-001.json, ... and large exports into several ...-part-0001.zip files.
+_CONVERSATION_PART = re.compile(r"^conversations-\d+\.json$", re.IGNORECASE)
+_ZIP_PART = re.compile(r"^(?P<stem>.+)-part-\d+\.zip$", re.IGNORECASE)
+
+
+def _zip_parts(path: Path) -> list[Path]:
+    """All parts of a split export (sibling ...-part-NNNN.zip files), or just `path`."""
+    match = _ZIP_PART.match(path.name)
+    if not match:
+        return [path]
+    prefix = match.group("stem").lower() + "-part-"
+    parts = [p for p in path.parent.iterdir() if p.is_file() and _ZIP_PART.match(p.name) and p.name.lower().startswith(prefix)]
+    return sorted(parts, key=lambda p: p.name.lower()) or [path]
+
+
 class ExportSource:
-    """Uniform access to a .zip export or a loose conversations.json (+ sibling files)."""
+    """Uniform access to a .zip export (or all parts of a split export) or a loose conversations.json (+ sibling files)."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self._zip: Optional[zipfile.ZipFile] = None
+        self._zips: list[zipfile.ZipFile] = []
+        self._zip_of: dict[str, zipfile.ZipFile] = {}
         if self.path.is_file() and zipfile.is_zipfile(self.path):
-            self._zip = zipfile.ZipFile(self.path)
-            self.names = [n for n in self._zip.namelist() if not n.endswith("/")]
+            for part in _zip_parts(self.path):
+                archive = zipfile.ZipFile(part)
+                self._zips.append(archive)
+                for name in archive.namelist():
+                    if not name.endswith("/"):
+                        self._zip_of.setdefault(name, archive)
+            self.names = list(self._zip_of)
         elif self.path.is_file():
             self.names = [p.name for p in self.path.parent.iterdir() if p.is_file()]
         elif self.path.is_dir():
@@ -40,8 +63,8 @@ class ExportSource:
         return min(hits, key=len) if hits else None
 
     def read_bytes(self, name: str) -> bytes:
-        if self._zip is not None:
-            return self._zip.read(name)
+        if self._zips:
+            return self._zip_of[name].read(name)
         if self.path.is_file() and self.path.name == name:
             return self.path.read_bytes()
         return (self._base() / name).read_bytes()
@@ -57,22 +80,18 @@ class ExportSource:
         return min(hits, key=len) if hits else None
 
     def close(self) -> None:
-        if self._zip is not None:
-            self._zip.close()
+        for archive in self._zips:
+            archive.close()
 
 
 def load_export(path: str | Path) -> tuple[list[Conversation], ExportSource]:
     """Load conversations from a ChatGPT or Claude export. Returns (conversations, source)."""
     source = ExportSource(path)
-    if source.path.is_file() and not zipfile.is_zipfile(source.path) and source.path.suffix.lower() == ".json":
-        conversations_name = source.path.name
-    else:
-        conversations_name = source.find("conversations.json")
-    if conversations_name is None:
-        raise ValueError("conversations.json not found. Choose the ZIP you downloaded from ChatGPT or Claude (Settings → Data export).")
-    data = source.read_json(conversations_name)
-    if not isinstance(data, list):
-        raise ValueError("conversations.json is not a list of conversations.")
+    try:
+        data = _read_conversations(source)
+    except Exception:
+        source.close()
+        raise
     kind = detect_kind(data)
     if kind == "chatgpt":
         conversations = [c for c in (parse_chatgpt(item, source) for item in data) if c is not None]
@@ -82,6 +101,45 @@ def load_export(path: str | Path) -> tuple[list[Conversation], ExportSource]:
     else:
         conversations = []
     return conversations, source
+
+
+def _read_conversations(source: ExportSource) -> list[Any]:
+    if source.path.is_file() and not zipfile.is_zipfile(source.path) and source.path.suffix.lower() == ".json":
+        names = [source.path.name]
+    elif source.find("conversations.json"):
+        names = [source.find("conversations.json")]
+    else:
+        names = sorted((n for n in source.names if _CONVERSATION_PART.match(n.rsplit("/", 1)[-1])), key=lambda n: n.rsplit("/", 1)[-1].lower())
+    if not names:
+        raise ValueError(
+            "No conversations found (conversations.json or conversations-000.json). Choose the ZIP you downloaded from "
+            "ChatGPT or Claude (Settings → Data export). If your export came as several ...-part-0001.zip files, keep them in the same folder."
+        )
+    data: list[Any] = []
+    for name in names:
+        chunk = source.read_json(name)
+        if not isinstance(chunk, list):
+            raise ValueError(f"{name.rsplit('/', 1)[-1]} is not a list of conversations.")
+        data.extend(chunk)
+    return data
+
+
+_IMAGE_SIGNATURES = ((b"\x89PNG\r\n\x1a\n", ".png"), (b"\xff\xd8\xff", ".jpg"), (b"GIF87a", ".gif"), (b"GIF89a", ".gif"))
+
+
+def asset_file_name(archive_path: str, data: bytes) -> str:
+    """File name for a copied asset. Newer ChatGPT exports store images as .dat files; give them their real extension."""
+    name = archive_path.rsplit("/", 1)[-1]
+    stem, dot, suffix = name.rpartition(".")
+    if dot and suffix.lower() not in ("dat", "bin"):
+        return name
+    base = stem if dot else name
+    for signature, extension in _IMAGE_SIGNATURES:
+        if data.startswith(signature):
+            return base + extension
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return base + ".webp"
+    return name
 
 
 def detect_kind(data: list[Any]) -> str:

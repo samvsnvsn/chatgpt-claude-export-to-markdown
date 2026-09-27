@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .loaders import ExportSource
+from .loaders import ExportSource, asset_file_name
 from .model import Conversation
 
 ROLE_LABEL = {"user": "You", "assistant": "Assistant", "tool": "Tool", "system": "System"}
@@ -88,10 +88,11 @@ def write_markdown(conversations: list[Conversation], source: ExportSource, out_
         for message in conversation.messages:
             for attachment in message.attachments:
                 if attachment.archive_path and attachment.archive_path not in asset_links:
-                    target = assets_dir / attachment.archive_path.rsplit("/", 1)[-1]
+                    data = source.read_bytes(attachment.archive_path)
+                    target = assets_dir / asset_file_name(attachment.archive_path, data)
                     if not target.exists():
                         assets_dir.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(source.read_bytes(attachment.archive_path))
+                        target.write_bytes(data)
                     asset_links[attachment.archive_path] = Path("../" * (len(folder.relative_to(out).parts)) + "assets/" + target.name).as_posix()
         path = folder / f"{stem}.md"
         path.write_text(render_markdown(conversation, asset_links), encoding="utf-8")
